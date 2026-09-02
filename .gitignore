@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local environment files
+.env
+.env.*
+
+# Large model weights
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Input videos and generated media
+input_movie/
+test_movie/
+divid_move/
+output_yolov8/
+output_frames/
+
+# Common video/image outputs
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.MOV
+*.AVI
+*.MP4
+
+# Spreadsheet exports generated during experiments
+*.xlsx
+*.xls
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
