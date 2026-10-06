@@ -194,6 +194,10 @@ def build_posture_csv_header():
         "side",
         "head_forward_ratio",
         "trunk_angle",
+        "trunk_angle_left",
+        "trunk_angle_right",
+        "trunk_angle_opposite",
+        "trunk_angle_mid",
         "head_forward_score",
         "trunk_forward_score",
         "bad_reasons",
@@ -287,6 +291,10 @@ def write_posture_to_csv_files(csv_path, csv_files, writers, result, frame_count
                 assessment["side"],
                 round_or_blank(assessment["head_forward_ratio"]),
                 round_or_blank(assessment["trunk_angle"]),
+                round_or_blank(assessment["trunk_angle_left"]),
+                round_or_blank(assessment["trunk_angle_right"]),
+                round_or_blank(assessment["trunk_angle_opposite"]),
+                round_or_blank(assessment["trunk_angle_mid"]),
                 round_or_blank(assessment["head_forward_score"], digits=1),
                 round_or_blank(assessment["trunk_forward_score"], digits=1),
                 ";".join(assessment["bad_reasons"]),
@@ -308,20 +316,17 @@ def get_keypoints_conf(result, person_count):
 
 
 def assess_side_view_posture(person_keypoints, person_conf=None, min_conf=MIN_KEYPOINT_CONF):
-    side = choose_visible_side(person_keypoints, person_conf)
+    front_side = choose_front_side(person_keypoints, person_conf)
     point = make_point_reader(person_keypoints, person_conf, min_conf)
 
-    ear = point(f"{side}_ear")
-    shoulder = point(f"{side}_shoulder")
-    hip = point(f"{side}_hip")
+    ear = point(f"{front_side}_ear")
+    shoulder = point(f"{front_side}_shoulder")
+    hip = point(f"{front_side}_hip")
 
-    torso_length = distance(shoulder, hip)
+    head_forward_ratio = head_forward_ratio_from_torso_line(ear, shoulder, hip)
 
-    head_forward_ratio = None
-    if ear is not None and shoulder is not None and torso_length:
-        head_forward_ratio = abs(ear[0] - shoulder[0]) / torso_length
-
-    trunk_angle = angle_from_vertical(shoulder, hip)
+    trunk_angles = compare_trunk_angles(point, front_side)
+    trunk_angle = trunk_angles["front"]
 
     head_score, head_reason = score_head_forward(head_forward_ratio)
     trunk_score, trunk_reason = score_trunk_angle(trunk_angle)
@@ -333,9 +338,13 @@ def assess_side_view_posture(person_keypoints, person_conf=None, min_conf=MIN_KE
     ]
 
     return {
-        "side": side,
+        "side": front_side,
         "head_forward_ratio": head_forward_ratio,
         "trunk_angle": trunk_angle,
+        "trunk_angle_left": trunk_angles["left"],
+        "trunk_angle_right": trunk_angles["right"],
+        "trunk_angle_opposite": trunk_angles["back"],
+        "trunk_angle_mid": trunk_angles["mid"],
         "head_forward_score": head_score,
         "trunk_forward_score": trunk_score,
         "bad_reasons": bad_reasons,
@@ -343,7 +352,34 @@ def assess_side_view_posture(person_keypoints, person_conf=None, min_conf=MIN_KE
     }
 
 
-def choose_visible_side(person_keypoints, person_conf):
+def compare_trunk_angles(point, front_side):
+    back_side = "right" if front_side == "left" else "left"
+
+    left_shoulder = point("left_shoulder")
+    left_hip = point("left_hip")
+    right_shoulder = point("right_shoulder")
+    right_hip = point("right_hip")
+
+    left_angle = angle_from_vertical(left_shoulder, left_hip)
+    right_angle = angle_from_vertical(right_shoulder, right_hip)
+    front_angle = left_angle if front_side == "left" else right_angle
+    back_angle = right_angle if back_side == "right" else left_angle
+
+    shoulder_mid = midpoint(left_shoulder, right_shoulder)
+    hip_mid = midpoint(left_hip, right_hip)
+    mid_angle = angle_from_vertical(shoulder_mid, hip_mid)
+
+    return {
+        "front": front_angle,
+        "left": left_angle,
+        "right": right_angle,
+        "back": back_angle,
+        "mid": mid_angle,
+    }
+
+
+def choose_front_side(person_keypoints, person_conf):
+    """Choose the camera-side body side from visible ear, shoulder, and hip confidence."""
     side_scores = {}
     for side in ["left", "right"]:
         ids = [
@@ -377,6 +413,12 @@ def first_available_point(*points):
     return None
 
 
+def midpoint(point_a, point_b):
+    if point_a is None or point_b is None:
+        return None
+    return (point_a + point_b) / 2.0
+
+
 def make_point_reader(person_keypoints, person_conf, min_conf):
     def read_point(name):
         keypoint_id = KEYPOINT_NAMES.index(name)
@@ -399,6 +441,21 @@ def distance(point_a, point_b):
     return float(np.linalg.norm(point_a - point_b))
 
 
+def head_forward_ratio_from_torso_line(ear, shoulder, hip):
+    if ear is None or shoulder is None or hip is None:
+        return None
+
+    torso = shoulder - hip
+    torso_length = np.linalg.norm(torso)
+    if torso_length == 0:
+        return None
+
+    ear_offset = ear - shoulder
+    cross = torso[0] * ear_offset[1] - torso[1] * ear_offset[0]
+    perpendicular_distance = abs(float(cross)) / torso_length
+    return perpendicular_distance / torso_length
+
+
 def angle_from_vertical(top_point, bottom_point):
     if top_point is None or bottom_point is None:
         return None
@@ -417,21 +474,46 @@ def angle_from_vertical(top_point, bottom_point):
 def score_head_forward(value):
     if value is None:
         return None, "head_unavailable"
-    if value <= 0.08:
-        return 100.0, ""
-    if value <= 0.15:
-        return interpolate_score(value, 0.08, 0.15, 80.0, 50.0), "head_forward"
-    return max(0.0, interpolate_score(value, 0.15, 0.25, 45.0, 0.0)), "head_forward"
+
+    score = piecewise_score(
+        value,
+        [
+            (0.00, 100.0),
+            (0.04, 85.0),
+            (0.10, 50.0),
+            (0.18, 0.0),
+        ],
+    )
+    reason = "head_forward" if score < 85.0 else ""
+    return score, reason
 
 
 def score_trunk_angle(value):
     if value is None:
         return None, "trunk_unavailable"
-    if value <= 10.0:
-        return 100.0, ""
-    if value <= 20.0:
-        return interpolate_score(value, 10.0, 20.0, 80.0, 50.0), "trunk_forward"
-    return max(0.0, interpolate_score(value, 20.0, 35.0, 45.0, 0.0)), "trunk_forward"
+
+    score = piecewise_score(
+        value,
+        [
+            (0.0, 100.0),
+            (5.0, 85.0),
+            (15.0, 50.0),
+            (30.0, 0.0),
+        ],
+    )
+    reason = "trunk_forward" if score < 85.0 else ""
+    return score, reason
+
+
+def piecewise_score(value, points):
+    if value <= points[0][0]:
+        return points[0][1]
+
+    for (x_min, y_min), (x_max, y_max) in zip(points, points[1:]):
+        if value <= x_max:
+            return interpolate_score(value, x_min, x_max, y_min, y_max)
+
+    return points[-1][1]
 
 
 def interpolate_score(value, x_min, x_max, y_min, y_max):

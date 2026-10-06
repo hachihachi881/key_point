@@ -27,6 +27,7 @@ YOLOv8 Poseの2Dキーポイントだけでは、骨盤の向き、かかとの�
 .
 ├── process_video_yolov8.py      # YOLOv8 Poseによる動画処理と姿勢評価
 ├── extract_frames.py            # 動画からフレーム画像を抽出
+├── requirements-house-gpu.txt   # house_env用のGPU対応・描画再現バージョン
 ├── posture_assessment_notes.md  # 姿勢評価ルールと研究メモ
 ├── input_movie/                 # 処理対象動画
 ├── test_movie/                  # テスト用動画
@@ -39,13 +40,22 @@ YOLOv8 Poseの2Dキーポイントだけでは、骨盤の向き、かかとの�
 
 ## セットアップ
 
-Python環境を用意し、必要なライブラリをインストールします。
+このPCでは、Python 3.9.13で `house_env` を作り、動作確認済みのバージョンをインストールします。
 
-```bash
-pip install ultralytics opencv-python numpy torch
+```powershell
+py -3.9 -m venv house_env
+.\house_env\Scripts\Activate.ps1
+python -m pip install -r requirements-house-gpu.txt
 ```
 
-CUDA対応GPUが使える場合は、PyTorchの公式手順に従ってCUDA対応版を入れてください。
+RTX 3060 Tiと現在のNVIDIAドライバーに合わせて、CUDA 12.1版のPyTorchを使用します。
+また、YOLOのラベル描画を既存動画と揃えるため、Ultralytics `8.4.83` とOpenCV `4.13.0.92` に固定しています。OpenCV 5系へ更新すると、YOLOが使うHersheyフォントの字形と太さが変わります。
+
+```powershell
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+`process_video_yolov8.py` はCUDAが利用可能なら自動的に `device=0` を選択し、実行時に `Device: cuda:0` と表示します。
 
 ## 使い方
 
@@ -82,6 +92,10 @@ time
 side
 head_forward_ratio
 trunk_angle
+trunk_angle_left
+trunk_angle_right
+trunk_angle_opposite
+trunk_angle_mid
 head_forward_score
 trunk_forward_score
 bad_reasons
@@ -104,6 +118,9 @@ head_forward_ratio = abs(ear_x - shoulder_x) / torso_length
 ```text
 trunk_angle = angle(shoulder - hip, vertical)
 ```
+
+体幹線に使う肩・腰キーポイントの選び方を比較するため、左右それぞれの体幹角度、選択側と反対側の体幹角度、左右中点による体幹角度もCSVに保存します。
+現在の姿勢スコアに使う `trunk_angle` は、耳・肩・腰のconfidenceから推定した手前側の `shoulder - hip` を参照します。
 
 ## 今後の課題
 
