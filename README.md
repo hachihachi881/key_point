@@ -116,6 +116,22 @@ output_yolov8/
 
 キーポイントCSVには、各フレームの17点キーポイント座標とconfidenceが保存されます。
 
+## スコアの折れ線グラフ
+
+姿勢評価CSVの`head_forward_score`と`trunk_forward_score`は、次のコマンドで同じ時間軸の折れ線グラフにできます。
+
+```powershell
+python plot_posture_scores.py "output_yolov8\2026-10-20\sample_keypoints\sample0_posture.csv"
+```
+
+PNGは元CSVと同じフォルダへ`<CSV名>_scores.png`として保存されます。グラフも画面に表示する場合は`--show`を付けます。
+
+```powershell
+python plot_posture_scores.py "<posture.csv>" --show
+```
+
+引数を省略するとCSVファイルの選択画面が開きます。縦軸は0〜100点、横軸は動画開始からの秒数で、頭部前方突出スコアと体幹スコアに加えて85点の基準線を表示します。CSV内の欠損値は0点へ変換せず、グラフ上の線の切れ目として扱います。
+
 姿勢評価CSVには、現在以下の列が保存されます。
 
 ```text
