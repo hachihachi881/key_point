@@ -69,6 +69,13 @@ python calibration_ui.py
 
 開始画面で入力動画、保存先フォルダ、YOLOモデル、キャリブレーション時間を指定します。プレビューでは、耳・肩・腰が検出されていることを確認してから `START CALIBRATION` を押します。カウントダウン後に良い姿勢を保持し、結果を確認して `ACCEPT` または `RETRY` を選択します。
 
+`Use personal calibration`で処理を切り替えられます。
+
+- オン：個人基準値からの変化量を既存スコアリングへ入力
+- オフ：従来どおり生の姿勢指標を既存スコアリングへ入力
+
+同じ動画をオンとオフで1回ずつ処理すると、`calibrated`と`uncalibrated`の名前で結果が保存されます。スコアリング関数そのものは共通であり、入力値に個人基準を適用するかだけが異なります。
+
 キャリブレーションでは、頭部前方突出比率と体幹角度の中央値を個人基準値とし、その基準から悪化した量をスコアへ入力します。出力CSVには生値、基準値、差分が保存されます。
 
 プレビュー画面では次のキーも使用できます。
@@ -99,10 +106,12 @@ python process_video_yolov8.py
 ```text
 output_yolov8/
 └── 2026-10-20/
-    ├── <video_name>_153045_yolov8.mp4
-    └── <video_name>_153045_keypoints/
-        ├── <video_name>_1530450.csv
-        └── <video_name>_1530450_posture.csv
+    ├── <video_name>_153045_calibrated_yolov8.mp4
+    ├── <video_name>_153045_calibrated_keypoints/
+    │   └── <video_name>_153045_calibrated0_posture.csv
+    ├── <video_name>_153210_uncalibrated_yolov8.mp4
+    └── <video_name>_153210_uncalibrated_keypoints/
+        └── <video_name>_153210_uncalibrated0_posture.csv
 ```
 
 キーポイントCSVには、各フレームの17点キーポイント座標とconfidenceが保存されます。

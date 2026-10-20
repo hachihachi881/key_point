@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-def create_dated_output_paths(video_path, output_root="output_yolov8", now=None):
+def create_dated_output_paths(video_path, output_root="output_yolov8", now=None, mode=None):
     """Create unique video/CSV paths under an execution-date directory."""
     executed_at = now or datetime.now().astimezone()
     date_dir = Path(output_root) / executed_at.strftime("%Y-%m-%d")
@@ -12,6 +12,8 @@ def create_dated_output_paths(video_path, output_root="output_yolov8", now=None)
 
     source_name = Path(video_path).stem
     base_name = f"{source_name}_{executed_at.strftime('%H%M%S')}"
+    if mode:
+        base_name = f"{base_name}_{mode}"
     candidate = base_name
     suffix = 2
 

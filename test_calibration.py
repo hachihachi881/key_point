@@ -53,6 +53,19 @@ class OutputPathsTest(unittest.TestCase):
             self.assertEqual(second_video_path.name, "sample_153045_2_yolov8.mp4")
             self.assertEqual(second_csv_path.name, "sample_153045_2_keypoints")
 
+    def test_mode_is_included_for_comparison_outputs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executed_at = datetime(2026, 10, 20, 15, 30, 45)
+            video_path, csv_path = create_dated_output_paths(
+                "sample.mp4",
+                temp_dir,
+                now=executed_at,
+                mode="uncalibrated",
+            )
+
+            self.assertEqual(video_path.name, "sample_153045_uncalibrated_yolov8.mp4")
+            self.assertEqual(csv_path.name, "sample_153045_uncalibrated_keypoints")
+
 
 if __name__ == "__main__":
     unittest.main()

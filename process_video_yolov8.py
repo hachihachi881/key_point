@@ -90,7 +90,11 @@ def process_video_yolov8(
         fps = 30
 
     if output_path is None:
-        generated_output_path, generated_csv_path = create_dated_output_paths(video_path)
+        output_mode = "calibrated" if calibration_baseline is not None else "uncalibrated"
+        generated_output_path, generated_csv_path = create_dated_output_paths(
+            video_path,
+            mode=output_mode,
+        )
         output_path = str(generated_output_path)
         output_dir = str(generated_output_path.parent)
         if csv_path is None:

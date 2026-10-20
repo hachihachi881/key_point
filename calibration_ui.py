@@ -345,14 +345,20 @@ class CalibrationLauncher:
             messagebox.showerror("Invalid settings", str(exc))
             return
 
-        output_path, csv_path = create_dated_output_paths(video_path, output_root)
+        calibration_enabled = self.use_calibration_var.get()
+        output_mode = "calibrated" if calibration_enabled else "uncalibrated"
+        output_path, csv_path = create_dated_output_paths(
+            video_path,
+            output_root,
+            mode=output_mode,
+        )
         self.start_button.state(["disabled"])
         self.root.update_idletasks()
 
         try:
             baseline = None
             loaded_model = None
-            if self.use_calibration_var.get():
+            if calibration_enabled:
                 self.status_var.set("Loading the model and opening calibration preview...")
                 self.root.update_idletasks()
                 self.root.withdraw()
