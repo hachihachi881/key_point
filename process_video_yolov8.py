@@ -4,10 +4,20 @@ import math
 import os
 from pathlib import Path
 
+if __name__ == "__main__":
+    print("Starting YOLOv8 video processing...", flush=True)
+    print("Loading OpenCV, PyTorch, and Ultralytics...", flush=True)
+
 import cv2
 import numpy as np
 import torch
 from ultralytics import YOLO
+
+from calibration import calibrated_value
+from output_paths import create_dated_output_paths, csv_path_for_output_video
+
+if __name__ == "__main__":
+    print("Libraries loaded.", flush=True)
 
 
 KEYPOINT_NAMES = [
@@ -41,6 +51,8 @@ def process_video_yolov8(
     model_name="yolov8x-pose.pt",
     person_conf=0.8,
     min_person_rows=30,
+    calibration_baseline=None,
+    model=None,
 ):
     """
     Run YOLOv8 pose estimation and save an annotated video plus keypoint CSV files.
@@ -53,12 +65,15 @@ def process_video_yolov8(
 
     Person CSV files with fewer than min_person_rows data rows are deleted as likely false detections.
     """
-    try:
-        model = YOLO(model_name)
-    except Exception as e:
-        print(f"Model load error: {e}")
-        print("If YOLOv8 is not installed, run: pip install ultralytics")
-        return
+    if model is None:
+        print(f"Loading model: {model_name}", flush=True)
+        try:
+            model = YOLO(model_name)
+        except Exception as e:
+            print(f"Model load error: {e}")
+            print("If YOLOv8 is not installed, run: pip install ultralytics")
+            return
+        print("Model loaded.", flush=True)
     device = 0 if torch.cuda.is_available() else "cpu"
 
     cap = cv2.VideoCapture(video_path)
@@ -75,19 +90,22 @@ def process_video_yolov8(
         fps = 30
 
     if output_path is None:
-        output_dir = "output_yolov8"
-        os.makedirs(output_dir, exist_ok=True)
-        video_name = Path(video_path).stem
-        output_path = os.path.join(output_dir, f"{video_name}_yolov8.mp4")
+        generated_output_path, generated_csv_path = create_dated_output_paths(video_path)
+        output_path = str(generated_output_path)
+        output_dir = str(generated_output_path.parent)
+        if csv_path is None:
+            csv_path = str(generated_csv_path)
     else:
         output_dir = os.path.dirname(output_path) or "."
         os.makedirs(output_dir, exist_ok=True)
 
     if csv_path is None:
-        video_name = Path(video_path).stem
-        csv_path = os.path.join(output_dir, f"{video_name}_keypoints")
+        csv_path = str(csv_path_for_output_video(output_path))
     else:
-        csv_path = str(Path(csv_path).with_suffix(""))
+        csv_path = Path(csv_path)
+        if csv_path.suffix.lower() == ".csv":
+            csv_path = csv_path.with_suffix("")
+        csv_path = str(csv_path)
 
     os.makedirs(csv_path, exist_ok=True)
 
@@ -138,6 +156,7 @@ def process_video_yolov8(
                 result,
                 frame_count,
                 fps,
+                calibration_baseline,
             )
 
             annotated_frame = result.plot()
@@ -147,7 +166,7 @@ def process_video_yolov8(
 
             if frame_count % 30 == 0:
                 progress = (frame_count / total_frames) * 100 if total_frames else 0
-                print(f"Progress: {frame_count}/{total_frames} ({progress:.1f}%)")
+                print(f"Progress: {frame_count}/{total_frames} ({progress:.1f}%)", flush=True)
     finally:
         for csv_file in csv_files.values():
             csv_file.close()
@@ -192,8 +211,13 @@ def build_posture_csv_header():
     return [
         "time",
         "side",
+        "calibration_state",
         "head_forward_ratio",
+        "head_forward_ratio_baseline",
+        "head_forward_ratio_delta",
         "trunk_angle",
+        "trunk_angle_baseline",
+        "trunk_angle_delta",
         "trunk_angle_left",
         "trunk_angle_right",
         "trunk_angle_opposite",
@@ -270,7 +294,15 @@ def write_keypoints_to_csv_files(csv_path, csv_files, writers, person_row_counts
         person_row_counts[person_id] = person_row_counts.get(person_id, 0) + 1
 
 
-def write_posture_to_csv_files(csv_path, csv_files, writers, result, frame_count, fps):
+def write_posture_to_csv_files(
+    csv_path,
+    csv_files,
+    writers,
+    result,
+    frame_count,
+    fps,
+    calibration_baseline=None,
+):
     posture_results = []
     if result.keypoints is None or result.keypoints.xy is None:
         return posture_results
@@ -281,7 +313,11 @@ def write_posture_to_csv_files(csv_path, csv_files, writers, result, frame_count
     time_sec = frame_count / fps
     for person_id, person_keypoints in enumerate(keypoints_xy):
         person_conf = keypoints_conf[person_id] if keypoints_conf is not None else None
-        assessment = assess_side_view_posture(person_keypoints, person_conf)
+        assessment = assess_side_view_posture(
+            person_keypoints,
+            person_conf,
+            calibration_baseline=calibration_baseline,
+        )
         posture_results.append((person_id, assessment))
 
         writer = get_person_posture_csv_writer(csv_path, csv_files, writers, person_id)
@@ -289,8 +325,13 @@ def write_posture_to_csv_files(csv_path, csv_files, writers, result, frame_count
             [
                 round(time_sec, 6),
                 assessment["side"],
+                assessment["calibration_state"],
                 round_or_blank(assessment["head_forward_ratio"]),
+                round_or_blank(assessment["head_forward_ratio_baseline"]),
+                round_or_blank(assessment["head_forward_ratio_delta"]),
                 round_or_blank(assessment["trunk_angle"]),
+                round_or_blank(assessment["trunk_angle_baseline"]),
+                round_or_blank(assessment["trunk_angle_delta"]),
                 round_or_blank(assessment["trunk_angle_left"]),
                 round_or_blank(assessment["trunk_angle_right"]),
                 round_or_blank(assessment["trunk_angle_opposite"]),
@@ -315,7 +356,12 @@ def get_keypoints_conf(result, person_count):
     return keypoints_conf
 
 
-def assess_side_view_posture(person_keypoints, person_conf=None, min_conf=MIN_KEYPOINT_CONF):
+def assess_side_view_posture(
+    person_keypoints,
+    person_conf=None,
+    min_conf=MIN_KEYPOINT_CONF,
+    calibration_baseline=None,
+):
     front_side = choose_front_side(person_keypoints, person_conf)
     point = make_point_reader(person_keypoints, person_conf, min_conf)
 
@@ -328,8 +374,25 @@ def assess_side_view_posture(person_keypoints, person_conf=None, min_conf=MIN_KE
     trunk_angles = compare_trunk_angles(point, front_side)
     trunk_angle = trunk_angles["front"]
 
-    head_score, head_reason = score_head_forward(head_forward_ratio)
-    trunk_score, trunk_reason = score_trunk_angle(trunk_angle)
+    if calibration_baseline is None:
+        head_baseline = None
+        trunk_baseline = None
+        head_delta = None
+        trunk_delta = None
+        head_value_for_score = head_forward_ratio
+        trunk_value_for_score = trunk_angle
+        calibration_state = "disabled"
+    else:
+        head_baseline = calibration_baseline.head_forward_ratio
+        trunk_baseline = calibration_baseline.trunk_angle
+        head_delta = calibrated_value(head_forward_ratio, head_baseline)
+        trunk_delta = calibrated_value(trunk_angle, trunk_baseline)
+        head_value_for_score = head_delta
+        trunk_value_for_score = trunk_delta
+        calibration_state = "calibrated"
+
+    head_score, head_reason = score_head_forward(head_value_for_score)
+    trunk_score, trunk_reason = score_trunk_angle(trunk_value_for_score)
 
     bad_reasons = [
         reason
@@ -339,8 +402,13 @@ def assess_side_view_posture(person_keypoints, person_conf=None, min_conf=MIN_KE
 
     return {
         "side": front_side,
+        "calibration_state": calibration_state,
         "head_forward_ratio": head_forward_ratio,
+        "head_forward_ratio_baseline": head_baseline,
+        "head_forward_ratio_delta": head_delta,
         "trunk_angle": trunk_angle,
+        "trunk_angle_baseline": trunk_baseline,
+        "trunk_angle_delta": trunk_delta,
         "trunk_angle_left": trunk_angles["left"],
         "trunk_angle_right": trunk_angles["right"],
         "trunk_angle_opposite": trunk_angles["back"],
@@ -534,7 +602,8 @@ def draw_posture_overlay(frame, posture_results):
         else:
             head_text = format_score_for_overlay(head_score)
             trunk_text = format_score_for_overlay(trunk_score)
-            text = f"id {person_id}: head {head_text} / trunk {trunk_text}"
+            calibration_label = " CAL" if assessment["calibration_state"] == "calibrated" else ""
+            text = f"id {person_id}{calibration_label}: head {head_text} / trunk {trunk_text}"
             color = posture_color(min_available_score(head_score, trunk_score))
 
         anchor = assessment.get("anchor")

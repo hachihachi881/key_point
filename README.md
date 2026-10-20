@@ -59,6 +59,27 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
 
 ## 使い方
 
+### キャリブレーションUIを使う
+
+次のコマンドで開始画面を開きます。
+
+```bash
+python calibration_ui.py
+```
+
+開始画面で入力動画、保存先フォルダ、YOLOモデル、キャリブレーション時間を指定します。プレビューでは、耳・肩・腰が検出されていることを確認してから `START CALIBRATION` を押します。カウントダウン後に良い姿勢を保持し、結果を確認して `ACCEPT` または `RETRY` を選択します。
+
+キャリブレーションでは、頭部前方突出比率と体幹角度の中央値を個人基準値とし、その基準から悪化した量をスコアへ入力します。出力CSVには生値、基準値、差分が保存されます。
+
+プレビュー画面では次のキーも使用できます。
+
+- `Space`: キャリブレーション開始
+- `Enter`: 結果を採用
+- `R`: キャリブレーションをやり直す
+- `Esc`: キャンセル
+
+### 従来のバッチ処理
+
 1. 処理したい動画を `input_movie/` に置きます。
 2. YOLOv8 Poseの重みファイルを用意します。
 3. 次のコマンドを実行します。
@@ -69,7 +90,7 @@ python process_video_yolov8.py
 
 デフォルトでは `input_movie/` 内の動画を処理し、`yolov8x-pose.pt` を使います。
 
-処理結果は `output_yolov8/` に保存されます。
+処理結果は `output_yolov8/<実行日>/` に保存されます。同じ動画を同日に複数回実行しても上書きされないよう、ファイル名には実行時刻が付きます。
 
 ## 出力
 
@@ -77,10 +98,11 @@ python process_video_yolov8.py
 
 ```text
 output_yolov8/
-├── <video_name>_yolov8.mp4
-└── <video_name>_keypoints/
-    ├── <video_name>0.csv
-    └── <video_name>0_posture.csv
+└── 2026-10-20/
+    ├── <video_name>_153045_yolov8.mp4
+    └── <video_name>_153045_keypoints/
+        ├── <video_name>_1530450.csv
+        └── <video_name>_1530450_posture.csv
 ```
 
 キーポイントCSVには、各フレームの17点キーポイント座標とconfidenceが保存されます。
@@ -90,8 +112,13 @@ output_yolov8/
 ```text
 time
 side
+calibration_state
 head_forward_ratio
+head_forward_ratio_baseline
+head_forward_ratio_delta
 trunk_angle
+trunk_angle_baseline
+trunk_angle_delta
 trunk_angle_left
 trunk_angle_right
 trunk_angle_opposite
